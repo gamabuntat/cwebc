@@ -19,6 +19,10 @@ export class XFoo extends CustomElements {
     return this.effect('count');
   }
 
+  set count(v) {
+    this.setAttribute('count', v);
+  }
+
   get color() {
     return this.effect('color');
   }
