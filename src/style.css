@@ -1,0 +1,11 @@
+div {
+  font-size: 1.3em;
+  border-bottom: 1px solid black;
+  line-height: 0;
+}
+
+.icon-em {
+  display: inline-block;
+  height: 1em;
+  width: 1em;
+}
