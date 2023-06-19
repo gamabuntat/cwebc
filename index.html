@@ -8,16 +8,11 @@
     <title>Vite + TS</title>
   </head>
   <body>
-    <x-foo count=1 count-count=2 color="tomato" another="haha another">
-      <p slot="content">haha x-foo content there!</p>
-    </x-foo>
-    <button id='plus'>+</button>
-    <script>
-      const button = document.querySelector('#plus');
-      const xFoo = document.querySelector('x-foo');
-      button.addEventListener('click', () => {
-        xFoo.count = Number(xFoo.count) + 1;
-      })
-    </script>
+    <first-button
+      icon-only
+      size="small"
+      text="haha"
+      color="tomato"
+    ></first-button>
   </body>
 </html>

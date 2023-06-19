@@ -1,1 +1,1 @@
-import {XFoo} from './components/XFoo';
+import './components/FirstButton';

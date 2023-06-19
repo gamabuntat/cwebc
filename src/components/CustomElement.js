@@ -1,66 +1,146 @@
-export class CustomElements extends HTMLElement {
+export class CustomElement extends HTMLElement {
   attrs = [];
-  states = [];
-  attrsMap = new Map();
+  attrsStack = [];
+  handlersMap = new Map();
 
   html(strings, ...replacements) {
+    if (this.attrs.length > 0) {
+      this.attrsStack.push(this.attrs);
+      this.attrs = [];
+    }
+    const states = [];
+    const localAttrs = [];
     const result = strings.reduce((acc, str, idx) => {
+      debugger;
       const replace = replacements[idx];
-      if (!replace) {
-        return `${acc}${str}`;
-      }
-      if (!(typeof replace === 'function')) {
-        return `${acc}${str}"${replace}"`;
-      }
-      // const attrName = str.match(/([\w-]+)=$/)?.[1];
-      // const cell = this.attrs.reduce((acc, attr) => acc + '$' + attr, '');
-      // const giglet = attrName ? `${cell}` : `<!-- ${cell} -->`;
-      this.states.push(replace);
-      return `${acc}${str}<!-- $${this.states.length - 1} -->`;
+      if (!replace) return `${acc}${str}`;
+      if (!(typeof replace === 'function')) return `${acc}${str}${replace}`;
+      const attrName = str.match(/([\w-]+)=$/)?.[1];
+      if (attrName) localAttrs.push(attrName);
+      states.push(replace);
+      const giglet = attrName
+        ? `"${states.length - 1}"`
+        : `<!-- ${states.length - 1} -->`;
+      return `${acc}${str}${giglet}`;
     }, '');
     const tmpl = document.createElement('template');
     tmpl.innerHTML = result;
+    this.processContent(tmpl, states);
+    debugger;
+    if (this.attrsStack.length > 0) {
+      this.attrs = this.attrsStack.pop();
+    }
+    return tmpl;
+    // this.processAttributes(tmpl);
+    // this.replaceSlots(tmpl);
+    // this.innerHTML = '';
+    // console.log(tmpl.content);
+    // this.append(tmpl.content);
+  }
+
+  processContent(tmpl, states) {
     const comments = this.findComments(tmpl.content);
     comments.forEach((comment) => {
-      comment.parentElement.childNodes.forEach((node, idx, parent) => {
+      comment.parentElement.childNodes.forEach((node) => {
         if (node === comment) {
-          this.attrs = [];
-          const cb = this.states[comment.nodeValue.match(/\d+/)?.[0]];
-          const res = cb?.();
-          this.attrs.forEach((attr) => {
-            const cbs = this.attrsMap.get(attr);
-            const f = () => {
-              parent[idx].replaceWith(cb());
+          const state = states[Number(comment.nodeValue.match(/\d+/)?.[0])];
+          const value = state?.();
+          let attr = this.attrs.pop();
+          while (attr) {
+            const handlers = this.handlersMap.get(attr);
+            const swp = document.createElement('div');
+            let oldNode = comment;
+            const handler = (v = state()) => {
+              if (v === false) v = '';
+              else if (v instanceof HTMLTemplateElement) swp.append(v.content);
+              else if (v instanceof HTMLElement) swp.append(v);
+              else swp.innerHTML = v;
+              const childNode =
+                swp.childNodes[0] ?? document.createTextNode('');
+              console.log(childNode);
+              oldNode.replaceWith(childNode);
+              oldNode = childNode;
             };
-            if (!cbs) {
-              this.attrsMap.set(attr, [f]);
+            if (!handlers) {
+              this.handlersMap.set(attr, [handler]);
             } else {
-              cbs.push(f);
+              handlers.push(handler);
             }
-            f();
-          });
+            attr = this.attrs.pop();
+            handler(value);
+          }
         }
       });
     });
-    /* comments[0].parentElement.childNodes.forEach((n, idx, parent) => {
-      if (n.nodeType === Node.COMMENT_NODE) {
-        const div = document.createElement('div')
-        div.innerHTML = 'dsadsad asdl kjas';
-        n.replaceWith('ahah');
+  }
+
+  processAttributes(tmpl) {
+    this.localAttrs.forEach((localAttr) => {
+      tmpl.content.querySelectorAll(`[${localAttr}]`).forEach((elem) => {
+        const state = this.states[Number(elem.getAttribute(localAttr))];
+        if (localAttr.startsWith('on') && localAttr in window) {
+          elem.removeAttribute(localAttr);
+          elem.addEventListener(localAttr.slice(2), state);
+          return;
+        }
+        this.attrs.clear();
+        state?.();
+        const attrs = this.attrs;
+        this.attrs = new Set();
+        attrs.forEach((attr) => {
+          const handlers = this.handlersMap.get(attr);
+          const handler = () => {
+            const newAttrValue = state();
+            this.setAttribute.call(elem, localAttr, newAttrValue);
+          };
+          if (!handlers) {
+            this.handlersMap.set(attr, [handler]);
+          } else {
+            handlers.push(handler);
+          }
+          handler();
+        });
+      });
+    });
+  }
+
+  effectAttribute(name) {
+    this.attrs.push(name);
+    return name;
+  }
+
+  getBooleanAttr(name) {
+    return this.getAttribute(name) === '';
+  }
+
+  setAttribute(name, value) {
+    if (typeof value === 'boolean') {
+      if (value) {
+        super.setAttribute(name, '');
+        return;
       }
-    }); */
-    this.innerHTML = '';
-    this.append(tmpl.content);
+      this.removeAttribute(name);
+      return;
+    }
+    super.setAttribute(name, value);
   }
 
-  effect(attr) {
-    this.attrs.push(attr);
-    return this.getAttribute(attr);
+  slotsAsData() {
+    const data = new Map();
+    this.querySelectorAll('[slot]').forEach((el) => {
+      const slotName = el.getAttribute('slot');
+      const dataValue = data.get(slotName) || [];
+      dataValue.push(el);
+      data.set(slotName, dataValue);
+    });
+    return data;
   }
 
-  attributeChangedCallback(name) {
-    this.attrsMap.get(name)?.forEach((f) => {
-      f();
+  replaceSlots(tmpl) {
+    const slotData = this.slotsAsData();
+    tmpl.content.querySelectorAll('slot').forEach((slot) => {
+      const elems = slotData.get(slot.getAttribute('name'));
+      slot.replaceWith(...(elems || []));
     });
   }
 
@@ -69,8 +149,7 @@ export class CustomElements extends HTMLElement {
     const iterator = document.createNodeIterator(
       element,
       NodeFilter.SHOW_COMMENT,
-      () => NodeFilter.FILTER_ACCEPT,
-      false
+      () => NodeFilter.FILTER_ACCEPT
     );
     while (true) {
       const node = iterator.nextNode();
@@ -80,5 +159,16 @@ export class CustomElements extends HTMLElement {
       comments.push(node);
     }
     return comments;
+  }
+
+  attributeChangedCallback(name) {
+    this.handlersMap.get(name)?.forEach((handler) => {
+      handler();
+    });
+  }
+
+  connectedCallback() {
+    const template = this.render();
+    this.append(template.content);
   }
 }
