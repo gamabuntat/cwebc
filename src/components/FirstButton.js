@@ -69,12 +69,8 @@ class FirstButton extends CustomElement {
   render() {
     return this.html`
       <button>
-        <slot name='icon-start'></slot>
-        <span>${() => this.size}</span>
-        ${() => !this.iconOnly && this.html`<span>${() => this.text}</span>`}
-        <span>${() => this.color}</span>
-        <span style='display: none'></span>
-        <slot name='icon-end'></slot>
+        ${() =>
+          !this.iconOnly && (() => this.html`<span>${() => this.text}</span>`)}
       </button>
     `;
   }

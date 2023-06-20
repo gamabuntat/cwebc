@@ -3,6 +3,13 @@ export class CustomElement extends HTMLElement {
   attrsStack = [];
   handlersMap = new Map();
 
+  connectedCallback() {
+    const template = this.render();
+    // this.replaceSlots(template);
+    this.innerHTML = '';
+    this.append(template.content);
+  }
+
   html(strings, ...replacements) {
     if (this.attrs.length > 0) {
       this.attrsStack.push(this.attrs);
@@ -11,7 +18,6 @@ export class CustomElement extends HTMLElement {
     const states = [];
     const localAttrs = [];
     const result = strings.reduce((acc, str, idx) => {
-      debugger;
       const replace = replacements[idx];
       if (!replace) return `${acc}${str}`;
       if (!(typeof replace === 'function')) return `${acc}${str}${replace}`;
@@ -25,17 +31,11 @@ export class CustomElement extends HTMLElement {
     }, '');
     const tmpl = document.createElement('template');
     tmpl.innerHTML = result;
+    this.handlersMap.set(tmpl.content.childNodes[0], new Map());
     this.processContent(tmpl, states);
-    debugger;
-    if (this.attrsStack.length > 0) {
-      this.attrs = this.attrsStack.pop();
-    }
+    // this.processAttributes(tmpl, states, localAttrs);
+    this.attrs = this.attrsStack.pop() ?? [];
     return tmpl;
-    // this.processAttributes(tmpl);
-    // this.replaceSlots(tmpl);
-    // this.innerHTML = '';
-    // console.log(tmpl.content);
-    // this.append(tmpl.content);
   }
 
   processContent(tmpl, states) {
@@ -47,47 +47,48 @@ export class CustomElement extends HTMLElement {
           const value = state?.();
           let attr = this.attrs.pop();
           while (attr) {
-            const handlers = this.handlersMap.get(attr);
+            const handlerItems = this.handlersMap
+              .get(tmpl.content.childNodes[0])
+              .get(attr);
             const swp = document.createElement('div');
             let oldNode = comment;
             const handler = (v = state()) => {
+              if (typeof v === 'function') v = v();
               if (v === false) v = '';
               else if (v instanceof HTMLTemplateElement) swp.append(v.content);
-              else if (v instanceof HTMLElement) swp.append(v);
-              else swp.innerHTML = v;
+              else swp.append(v);
               const childNode =
                 swp.childNodes[0] ?? document.createTextNode('');
-              console.log(childNode);
               oldNode.replaceWith(childNode);
               oldNode = childNode;
             };
-            if (!handlers) {
-              this.handlersMap.set(attr, [handler]);
+            if (!handlerItems) {
+              this.handlersMap
+                .get(tmpl.content.childNodes[0])
+                .set(attr, [handler]);
             } else {
-              handlers.push(handler);
+              handlerItems.push(handler);
             }
-            attr = this.attrs.pop();
             handler(value);
+            attr = this.attrs.pop();
           }
         }
       });
     });
   }
 
-  processAttributes(tmpl) {
-    this.localAttrs.forEach((localAttr) => {
+  processAttributes(tmpl, states, localAttrs) {
+    localAttrs.forEach((localAttr) => {
       tmpl.content.querySelectorAll(`[${localAttr}]`).forEach((elem) => {
-        const state = this.states[Number(elem.getAttribute(localAttr))];
+        const state = states[Number(elem.getAttribute(localAttr))];
         if (localAttr.startsWith('on') && localAttr in window) {
           elem.removeAttribute(localAttr);
           elem.addEventListener(localAttr.slice(2), state);
           return;
         }
-        this.attrs.clear();
-        state?.();
-        const attrs = this.attrs;
-        this.attrs = new Set();
-        attrs.forEach((attr) => {
+        const value = state?.();
+        let attr = this.attrs.pop();
+        while (attr) {
           const handlers = this.handlersMap.get(attr);
           const handler = () => {
             const newAttrValue = state();
@@ -98,8 +99,9 @@ export class CustomElement extends HTMLElement {
           } else {
             handlers.push(handler);
           }
+          attr = this.attrs.pop();
           handler();
-        });
+        }
       });
     });
   }
@@ -162,13 +164,18 @@ export class CustomElement extends HTMLElement {
   }
 
   attributeChangedCallback(name) {
-    this.handlersMap.get(name)?.forEach((handler) => {
-      handler();
+    console.log(this.handlersMap);
+    this.handlersMap.forEach((value, key) => {
+      debugger;
+      if (!key.parentElement) {
+        this.handlersMap.delete(key);
+        return;
+      }
+      value.get(name)?.forEach((handler) => {
+        console.count('handle');
+        this.attrs = [];
+        handler();
+      })
     });
-  }
-
-  connectedCallback() {
-    const template = this.render();
-    this.append(template.content);
   }
 }
