@@ -68,9 +68,12 @@ class FirstButton extends CustomElement {
 
   render() {
     return this.html`
-      <button>
+      <button onclick=${() => {
+        console.log('click');
+        this.onDbClick?.();
+      }}>
         ${() =>
-          !this.iconOnly && (() => this.html`<span>${() => this.text}</span>`)}
+          !this.iconOnly && this.html`<span>${() => this.text}</span>`}
       </button>
     `;
   }

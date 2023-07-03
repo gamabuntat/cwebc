@@ -2,11 +2,11 @@ export class CustomElement extends HTMLElement {
   attrs = [];
   attrsStack = [];
   handlersMap = new Map();
+  slotsData = this.slotsAsData();
 
   connectedCallback() {
-    const template = this.render();
-    // this.replaceSlots(template);
     this.innerHTML = '';
+    const template = this.render();
     this.append(template.content);
   }
 
@@ -19,37 +19,42 @@ export class CustomElement extends HTMLElement {
     const localAttrs = [];
     const result = strings.reduce((acc, str, idx) => {
       const replace = replacements[idx];
-      if (!replace) return `${acc}${str}`;
-      if (!(typeof replace === 'function')) return `${acc}${str}${replace}`;
+      if (replace === void 0) return `${acc}${str}`;
+      if (!replace) return `${acc}${str}""`;
+      if (!(typeof replace === 'function')) return `${acc}${str}"${replace}"`;
       const attrName = str.match(/([\w-]+)=$/)?.[1];
       if (attrName) localAttrs.push(attrName);
       states.push(replace);
       const giglet = attrName
-        ? `"${states.length - 1}"`
-        : `<!-- ${states.length - 1} -->`;
+              ? `"${states.length - 1}"`
+              : `<!-- ${states.length - 1} -->`;
       return `${acc}${str}${giglet}`;
-    }, '');
+    }, '').trim();
     const tmpl = document.createElement('template');
     tmpl.innerHTML = result;
-    this.handlersMap.set(tmpl.content.childNodes[0], new Map());
-    this.processContent(tmpl, states);
-    // this.processAttributes(tmpl, states, localAttrs);
+    const handlersMapKey = tmpl.content.childNodes.length > 1
+            ? this
+            : tmpl.content.childNodes[0];
+    this.handlersMap.set(handlersMapKey, new Map());
+    this.processContent(tmpl, states, handlersMapKey);
+    this.processAttributes(tmpl, states, localAttrs, handlersMapKey);
+    this.replaceSlots(tmpl);
     this.attrs = this.attrsStack.pop() ?? [];
     return tmpl;
   }
 
-  processContent(tmpl, states) {
+  processContent(tmpl, states, handlersMapKey) {
     const comments = this.findComments(tmpl.content);
     comments.forEach((comment) => {
-      comment.parentElement.childNodes.forEach((node) => {
+      comment.parentNode.childNodes.forEach((node) => {
         if (node === comment) {
           const state = states[Number(comment.nodeValue.match(/\d+/)?.[0])];
           const value = state?.();
           let attr = this.attrs.pop();
           while (attr) {
             const handlerItems = this.handlersMap
-              .get(tmpl.content.childNodes[0])
-              .get(attr);
+                    .get(handlersMapKey)
+                    .get(attr);
             const swp = document.createElement('div');
             let oldNode = comment;
             const handler = (v = state()) => {
@@ -58,14 +63,14 @@ export class CustomElement extends HTMLElement {
               else if (v instanceof HTMLTemplateElement) swp.append(v.content);
               else swp.append(v);
               const childNode =
-                swp.childNodes[0] ?? document.createTextNode('');
+                      swp.childNodes[0] ?? document.createTextNode('');
               oldNode.replaceWith(childNode);
               oldNode = childNode;
             };
             if (!handlerItems) {
               this.handlersMap
-                .get(tmpl.content.childNodes[0])
-                .set(attr, [handler]);
+                      .get(handlersMapKey)
+                      .set(attr, [handler]);
             } else {
               handlerItems.push(handler);
             }
@@ -77,7 +82,7 @@ export class CustomElement extends HTMLElement {
     });
   }
 
-  processAttributes(tmpl, states, localAttrs) {
+  processAttributes(tmpl, states, localAttrs, handlersMapKey) {
     localAttrs.forEach((localAttr) => {
       tmpl.content.querySelectorAll(`[${localAttr}]`).forEach((elem) => {
         const state = states[Number(elem.getAttribute(localAttr))];
@@ -89,18 +94,22 @@ export class CustomElement extends HTMLElement {
         const value = state?.();
         let attr = this.attrs.pop();
         while (attr) {
-          const handlers = this.handlersMap.get(attr);
-          const handler = () => {
-            const newAttrValue = state();
+          const handlerItems = this.handlersMap
+                  .get(handlersMapKey)
+                  .get(attr);
+          const handler = (v = state()) => {
+            const newAttrValue = v;
             this.setAttribute.call(elem, localAttr, newAttrValue);
           };
-          if (!handlers) {
-            this.handlersMap.set(attr, [handler]);
+          if (!handlerItems) {
+            this.handlersMap
+                    .get(handlersMapKey)
+                    .set(attr, [handler]);
           } else {
-            handlers.push(handler);
+            handlerItems.push(handler);
           }
           attr = this.attrs.pop();
-          handler();
+          handler(value);
         }
       });
     });
@@ -139,9 +148,8 @@ export class CustomElement extends HTMLElement {
   }
 
   replaceSlots(tmpl) {
-    const slotData = this.slotsAsData();
     tmpl.content.querySelectorAll('slot').forEach((slot) => {
-      const elems = slotData.get(slot.getAttribute('name'));
+      const elems = this.slotsData.get(slot.getAttribute('name'));
       slot.replaceWith(...(elems || []));
     });
   }
@@ -149,9 +157,9 @@ export class CustomElement extends HTMLElement {
   findComments(element) {
     const comments = [];
     const iterator = document.createNodeIterator(
-      element,
-      NodeFilter.SHOW_COMMENT,
-      () => NodeFilter.FILTER_ACCEPT
+            element,
+            NodeFilter.SHOW_COMMENT,
+            () => NodeFilter.FILTER_ACCEPT
     );
     while (true) {
       const node = iterator.nextNode();
@@ -175,7 +183,7 @@ export class CustomElement extends HTMLElement {
         console.count('handle');
         this.attrs = [];
         handler();
-      })
+      });
     });
   }
 }
